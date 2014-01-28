@@ -2277,6 +2277,11 @@ NSTimeInterval AEAudioControllerOutputLatency(AEAudioController *controller) {
     }
 }
 
+static void IsInterAppConnectedCallback(void *inRefCon, AudioUnit inUnit, AudioUnitPropertyID inID, AudioUnitScope inScope, AudioUnitElement inElement) {
+    AEAudioController *THIS = inRefCon;
+    [THIS updateInputDeviceStatus];
+}
+
 - (void)configureAudioUnit {
     if ( _inputEnabled ) {
         // Enable input
@@ -2322,6 +2327,9 @@ NSTimeInterval AEAudioControllerOutputLatency(AEAudioController *controller) {
     UInt32 maxFPS = 4096;
     checkResult(AudioUnitSetProperty(_ioAudioUnit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFPS, sizeof(maxFPS)),
                 "AudioUnitSetProperty(kAudioUnitProperty_MaximumFramesPerSlice)");
+
+    checkResult(AudioUnitAddPropertyListener(_ioAudioUnit, kAudioUnitProperty_IsInterAppConnected, IsInterAppConnectedCallback, self),
+                "AudioUnitAddPropertyListener(kAudioUnitProperty_IsInterAppConnected)");
 }
 
 - (void)teardown {
@@ -2409,11 +2417,18 @@ NSTimeInterval AEAudioControllerOutputLatency(AEAudioController *controller) {
     checkResult(result, "AudioSessionGetProperty");
     hardwareInputAvailable = inputAvailable;
     
+    UInt32 usingIAA = 0;
+    size = sizeof(usingIAA);
+    AudioUnitGetProperty(_ioAudioUnit, kAudioUnitProperty_IsInterAppConnected, kAudioUnitScope_Global, 0, &usingIAA, &size);
+
     // Determine if audio input is available, and the number of input channels available
     if ( _audiobusInputPort && ABInputPortIsConnected(_audiobusInputPort) ) {
         inputAvailable          = YES;
         numberOfInputChannels   = 2;
         usingAudiobus           = YES;
+    } else if(usingIAA) {
+        inputAvailable          = YES;
+        numberOfInputChannels   = 2;
     } else {
         size = sizeof(numberOfInputChannels);
         if ( inputAvailable ) {
@@ -2940,6 +2955,10 @@ NSTimeInterval AEAudioControllerOutputLatency(AEAudioController *controller) {
         
         
         if ( group ) {
+            // Ensure that we have enough input buses in the mixer
+            UInt32 busCount = group->channelCount;
+            checkResult(AudioUnitSetProperty(group->mixerAudioUnit, kAudioUnitProperty_ElementCount, kAudioUnitScope_Input, 0, &busCount, sizeof(busCount)), "AudioUnitSetProperty(kAudioUnitProperty_ElementCount)");
+
             // Set volume
             AudioUnitParameterValue volumeValue = channel->volume;
             checkResult(AudioUnitSetParameter(group->mixerAudioUnit, kMultiChannelMixerParam_Volume, kAudioUnitScope_Input, i, volumeValue, 0),
