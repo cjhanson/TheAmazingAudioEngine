@@ -2328,6 +2328,8 @@ static void IsInterAppConnectedCallback(void *inRefCon, AudioUnit inUnit, AudioU
     checkResult(AudioUnitSetProperty(_ioAudioUnit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFPS, sizeof(maxFPS)),
                 "AudioUnitSetProperty(kAudioUnitProperty_MaximumFramesPerSlice)");
 
+    if(!_inputEnabled)
+        return;
     checkResult(AudioUnitAddPropertyListener(_ioAudioUnit, kAudioUnitProperty_IsInterAppConnected, IsInterAppConnectedCallback, self),
                 "AudioUnitAddPropertyListener(kAudioUnitProperty_IsInterAppConnected)");
 }
@@ -2402,8 +2404,7 @@ static void IsInterAppConnectedCallback(void *inRefCon, AudioUnit inUnit, AudioU
 }
 
 - (BOOL)updateInputDeviceStatus {
-    if ( !_audioGraph ) return NO;
-    NSAssert(_inputEnabled, @"Input must be enabled");
+    if ( !_audioGraph || !_inputEnabled) return NO;
     
     BOOL success = YES;
     
