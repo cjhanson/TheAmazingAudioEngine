@@ -171,13 +171,11 @@ struct _schedule_t {
     struct _schedule_t *schedule = [self scheduleWithIdentifier:identifier];
     if ( !schedule ) return nil;
     
-    return [NSDictionary dictionaryWithObjectsAndKeys:
-            schedule->block, AEBlockSchedulerKeyBlock,
-            schedule->identifier, AEBlockSchedulerKeyIdentifier,
-            schedule->responseBlock ? (id)schedule->responseBlock : [NSNull null], AEBlockSchedulerKeyResponseBlock,
-            [NSNumber numberWithLongLong:schedule->time], AEBlockSchedulerKeyTimestampInHostTicks,
-            [NSNumber numberWithInt:schedule->context], AEBlockSchedulerKeyTimingContext,
-            nil];
+    return @{AEBlockSchedulerKeyBlock: schedule->block,
+            AEBlockSchedulerKeyIdentifier: schedule->identifier,
+            AEBlockSchedulerKeyResponseBlock: schedule->responseBlock ? (id)schedule->responseBlock : [NSNull null],
+            AEBlockSchedulerKeyTimestampInHostTicks: [NSNumber numberWithLongLong:schedule->time],
+            AEBlockSchedulerKeyTimingContext: [NSNumber numberWithInt:schedule->context]};
 }
 
 - (struct _schedule_t*)scheduleWithIdentifier:(id<NSCopying>)identifier {
@@ -214,7 +212,7 @@ static void timingReceiver(id                        receiver,
     
     for ( int i=THIS->_tail; i != THIS->_head; i=(i+1)%kMaximumSchedules ) {
         if ( THIS->_schedule[i].block && THIS->_schedule[i].context == context && THIS->_schedule[i].time && endTime >= THIS->_schedule[i].time ) {
-            UInt32 offset = THIS->_schedule[i].time > time->mHostTime ? AEConvertSecondsToFrames(audioController, (THIS->_schedule[i].time - time->mHostTime)*__hostTicksToSeconds) : 0;
+            UInt32 offset = THIS->_schedule[i].time > time->mHostTime ? (UInt32)AEConvertSecondsToFrames(audioController, (THIS->_schedule[i].time - time->mHostTime)*__hostTicksToSeconds) : 0;
             THIS->_schedule[i].block(time, offset);
             AEAudioControllerSendAsynchronousMessageToMainThread(audioController,
                                                                  timingReceiverFinishSchedule,
