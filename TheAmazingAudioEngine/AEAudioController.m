@@ -798,18 +798,7 @@ static OSStatus topRenderNotifyCallback(void *inRefCon, AudioUnitRenderActionFla
     }
     __cachedOutputLatency = audioSession.outputLatency;
     
-    BOOL hasError = NO;
-    
     _interrupted = NO;
-    
-    if ( _inputEnabled ) {
-        // Determine if audio input is available, and the number of input channels available
-        if ( ![self updateInputDeviceStatus] ) {
-            if ( error ) *error = self.lastError;
-            self.lastError = nil;
-            hasError = YES;
-        }
-    }
     
     if ( !_pollThread ) {
         // Start messaging poll thread
@@ -836,7 +825,10 @@ static OSStatus topRenderNotifyCallback(void *inRefCon, AudioUnitRenderActionFla
     if ( _inputEnabled ) {
         [audioSession requestRecordPermission:^(BOOL granted) {
             if ( granted ) {
-                [self updateInputDeviceStatus];
+                if ( ![self updateInputDeviceStatus] ) {
+                    if ( error ) *error = self.lastError;
+                    self.lastError = nil;
+                }
             } else {
                 [[NSNotificationCenter defaultCenter] postNotificationName:AEAudioControllerErrorOccurredNotification
                                                                     object:self
@@ -847,7 +839,7 @@ static OSStatus topRenderNotifyCallback(void *inRefCon, AudioUnitRenderActionFla
         }];
     }
     
-    return !hasError;
+    return YES;
 }
 
 - (void)stop {
@@ -1107,8 +1099,6 @@ static OSStatus topRenderNotifyCallback(void *inRefCon, AudioUnitRenderActionFla
     NSAssert(parentGroup != NULL, @"Channel not found");
     
     AudioUnitParameterValue value = group->channel->pan = pan;
-    if ( value == -1.0 ) value = -0.999; // Workaround for pan limits bug
-    if ( value == 1.0 ) value = 0.999;
     OSStatus result = AudioUnitSetParameter(parentGroup->mixerAudioUnit, kMultiChannelMixerParam_Pan, kAudioUnitScope_Input, index, value, 0);
     checkResult(result, "AudioUnitSetParameter(kMultiChannelMixerParam_Pan)");
 }
@@ -1910,8 +1900,6 @@ NSTimeInterval AEAudioControllerOutputLatency(__unsafe_unretained AEAudioControl
             
             if ( group->mixerAudioUnit ) {
                 AudioUnitParameterValue value = channelElement->pan;
-                if ( value == -1.0 ) value = -0.999; // Workaround for pan limits bug
-                if ( value == 1.0 ) value = 0.999;
                 OSStatus result = AudioUnitSetParameter(group->mixerAudioUnit, kMultiChannelMixerParam_Pan, kAudioUnitScope_Input, index, value, 0);
                 checkResult(result, "AudioUnitSetParameter(kMultiChannelMixerParam_Pan)");
             }
@@ -2003,6 +1991,8 @@ NSTimeInterval AEAudioControllerOutputLatency(__unsafe_unretained AEAudioControl
         
         [[NSNotificationCenter defaultCenter] postNotificationName:AEAudioControllerSessionInterruptionEndedNotification object:self];
     } else if ( [notification.userInfo[AVAudioSessionInterruptionTypeKey] intValue] == AVAudioSessionInterruptionTypeBegan ) {
+        if ( _interrupted ) return;
+        
         NSLog(@"TAAE: Audio session interrupted");
         _runningPriorToInterruption = _running;
         
@@ -2019,6 +2009,8 @@ NSTimeInterval AEAudioControllerOutputLatency(__unsafe_unretained AEAudioControl
 }
 
 - (void)audioRouteChangeNotification:(NSNotification*)notification {
+    if ( _interrupted ) return;
+    
     AVAudioSession *audioSession = [AVAudioSession sharedInstance];
     AVAudioSessionRouteDescription *currentRoute = audioSession.currentRoute;
     
@@ -2956,8 +2948,6 @@ static void IsInterAppConnectedCallback(void *inRefCon, AudioUnit inUnit, AudioU
             
             // Set pan
             AudioUnitParameterValue panValue = channel->pan;
-            if ( panValue == -1.0 ) panValue = -0.999; // Workaround for pan limits bug
-            if ( panValue == 1.0 ) panValue = 0.999;
             checkResult(AudioUnitSetParameter(group->mixerAudioUnit, kMultiChannelMixerParam_Pan, kAudioUnitScope_Input, i, panValue, 0),
                         "AudioUnitSetParameter(kMultiChannelMixerParam_Pan)");
             
