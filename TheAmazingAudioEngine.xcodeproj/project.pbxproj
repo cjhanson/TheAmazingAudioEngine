@@ -28,7 +28,6 @@
 		4C49FE34153DC21A008725E0 /* AEAudioFileLoaderOperation.m in Sources */ = {isa = PBXBuildFile; fileRef = 4C49FE31153DC21A008725E0 /* AEAudioFileLoaderOperation.m */; };
 		4C4B11F416833FDD00A3BA2E /* AEBlockChannel.h in Headers */ = {isa = PBXBuildFile; fileRef = 4C4B11F216833FDD00A3BA2E /* AEBlockChannel.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		4C4B11F516833FDD00A3BA2E /* AEBlockChannel.m in Sources */ = {isa = PBXBuildFile; fileRef = 4C4B11F316833FDD00A3BA2E /* AEBlockChannel.m */; };
-		4C698CFD162B02EF008B159D /* TPCircularBuffer+AudioBufferList.c in Sources */ = {isa = PBXBuildFile; fileRef = 4C698CF9162B02EF008B159D /* TPCircularBuffer+AudioBufferList.c */; };
 		4C8AED0416B3644500958034 /* AEFloatConverter.h in Headers */ = {isa = PBXBuildFile; fileRef = 4C8AED0216B3644500958034 /* AEFloatConverter.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		4C8AED0516B3644500958034 /* AEFloatConverter.m in Sources */ = {isa = PBXBuildFile; fileRef = 4C8AED0316B3644500958034 /* AEFloatConverter.m */; };
 		4C99588516BB74720011FB01 /* AEAudioUnitChannel.h in Headers */ = {isa = PBXBuildFile; fileRef = 4C99588316BB74720011FB01 /* AEAudioUnitChannel.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -263,7 +262,7 @@
 		4CE501831493F82600F23607 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0500;
+				LastUpgradeCheck = 0600;
 				ORGANIZATIONNAME = "A Tasty Pixel";
 			};
 			buildConfigurationList = 4CE501861493F82600F23607 /* Build configuration list for PBXProject "TheAmazingAudioEngine" */;
@@ -326,7 +325,6 @@
 				4C38DC5715458AB1009F4454 /* AEAudioFileWriter.m in Sources */,
 				4C2886521557DB800074175A /* AEAudioController+Audiobus.m in Sources */,
 				4C25747415F0D8E100D232E8 /* TPCircularBuffer.c in Sources */,
-				4C698CFD162B02EF008B159D /* TPCircularBuffer+AudioBufferList.c in Sources */,
 				4C4B11F516833FDD00A3BA2E /* AEBlockChannel.m in Sources */,
 				4C8AED0516B3644500958034 /* AEFloatConverter.m in Sources */,
 				4CEC0EBA16B5294300D11ED9 /* AEBlockFilter.m in Sources */,
@@ -433,7 +431,6 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
-				ONLY_ACTIVE_ARCH = NO;
 				SDKROOT = iphoneos;
 			};
 			name = Debug;
