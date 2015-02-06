@@ -81,27 +81,33 @@ static inline void AEAudioControllerError(OSStatus result, const char *operation
     }
 }
 
+static inline BOOL AEAudioControllerRateLimit() {
+    static uint64_t lastMessage = 0;
+    static int messageCount=0;
+    uint64_t now = mach_absolute_time();
+    if ( (now-lastMessage)*__hostTicksToSeconds > 2 ) {
+        messageCount = 0;
+    }
+    lastMessage = now;
+    if ( ++messageCount >= 10 ) {
+        if ( messageCount == 10 ) {
+            @autoreleasepool {
+                NSLog(@"TAAE: Suppressing some messages");
+            }
+        }
+        if ( messageCount%500 != 0 ) {
+            return NO;
+        }
+    }
+    return YES;
+}
+
 #define checkResult(result,operation) (_checkResult((result),(operation),strrchr(__FILE__, '/')+1,__LINE__))
 static inline BOOL _checkResult(OSStatus result, const char *operation, const char* file, int line) {
     if ( result != noErr ) {
-        static uint64_t lastMessage = 0;
-        static int messageCount=0;
-        uint64_t now = mach_absolute_time();
-        if ( (now-lastMessage)*__hostTicksToSeconds > 2 ) {
-            messageCount = 0;
+        if ( AEAudioControllerRateLimit() ) {
+            AEAudioControllerError(result, operation, file, line);
         }
-        lastMessage = now;
-        if ( ++messageCount >= 10 ) {
-            if ( messageCount == 10 ) {
-                @autoreleasepool {
-                    NSLog(@"TAAE: Suppressing some messages");
-                }
-            }
-            if ( messageCount%500 != 0 ) {
-                return NO;
-            }
-        }
-        AEAudioControllerError(result, operation, file, line);
         return NO;
     }
     return YES;
@@ -276,6 +282,10 @@ typedef struct {
     
     AudioBufferList    *_audiobusMonitorBuffer;
     pthread_t           _renderThread;
+    
+#ifdef DEBUG
+    uint64_t            _renderStartTime;
+#endif
 }
 
 - (BOOL)mustUpdateVoiceProcessingSettings;
@@ -381,6 +391,11 @@ static OSStatus renderCallback(void *inRefCon, AudioUnitRenderActionFlags *ioAct
     }
     
     AudioTimeStamp timestamp = *inTimeStamp;
+    
+    if ( THIS->_automaticLatencyManagement ) {
+        // Adjust timestamp to factor in hardware output latency
+        timestamp.mHostTime += AEAudioControllerOutputLatency(THIS)*__secondsToHostTicks;
+    }
     
     if ( channel->timeStamp.mFlags == 0 ) {
         channel->timeStamp = timestamp;
@@ -517,6 +532,11 @@ static OSStatus inputAvailableCallback(void *inRefCon, AudioUnitRenderActionFlag
         ABReceiverPortReceive(THIS->_audiobusReceiverPort, nil, THIS->_inputAudioBufferList, inNumberFrames, &timestamp);
         timestamp.mSampleTime = __sampleTime;
         __sampleTime += inNumberFrames;
+    } else {
+        if ( THIS->_automaticLatencyManagement ) {
+            // Adjust timestamp to factor in hardware input latency
+            timestamp.mHostTime -= AEAudioControllerInputLatency(THIS)*__secondsToHostTicks;
+        }
     }
     
     for ( int i=0; i<THIS->_timingCallbacks.count; i++ ) {
@@ -627,6 +647,51 @@ static OSStatus topRenderNotifyCallback(void *inRefCon, AudioUnitRenderActionFla
     
     return noErr;
 }
+
+#ifdef DEBUG
+
+// Performance monitoring in debug mode
+static OSStatus ioUnitRenderNotifyCallback(void *inRefCon, AudioUnitRenderActionFlags *ioActionFlags, const AudioTimeStamp *inTimeStamp, UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList *ioData) {
+    
+    __unsafe_unretained AEAudioController * THIS = (__bridge AEAudioController*)inRefCon;
+    
+    if ( ((THIS->_inputEnabled && inBusNumber == 1) || (!THIS->_inputEnabled && inBusNumber == 0)) && *ioActionFlags & kAudioUnitRenderAction_PreRender ) {
+        // Remember the time we started rendering
+        THIS->_renderStartTime = mach_absolute_time();
+        
+    } else if ( inBusNumber == 0 && *ioActionFlags & kAudioUnitRenderAction_PostRender ) {
+        // Output bus renders last. Warn if total render takes longer than 50% of buffer duration (gives us a bit of headroom)
+        uint64_t renderEndTime = mach_absolute_time();
+        uint64_t duration = renderEndTime - THIS->_renderStartTime;
+        NSTimeInterval threshold = THIS->_currentBufferDuration * 0.5;
+        if ( duration >= threshold * __secondsToHostTicks && AEAudioControllerRateLimit() ) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSLog(@"TAAE: Warning: render took too long (%lfs, should be less than %lfs). Expect glitches.", duration*__hostTicksToSeconds, threshold);
+            });
+        }
+        
+#ifdef TAAE_REPORT_RENDER_TIME
+        // Define the above symbol to report ongoing (max) render time every second
+        static uint64_t max = 0;
+        static uint64_t lastReport = 0;
+        if ( duration > max ) {
+            max = duration;
+        }
+        if ( renderEndTime > lastReport + (1.0 * __secondsToHostTicks) ) {
+            uint64_t value = max;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSLog(@"TAAE: Render time %lfs", value*__hostTicksToSeconds);
+            });
+            lastReport = renderEndTime;
+            max = 0;
+        }
+#endif
+    }
+    
+    return noErr;
+}
+
+#endif
 
 #pragma mark - Setup and start/stop
 
@@ -1366,8 +1431,11 @@ static void processPendingMessagesOnRealtimeThread(__unsafe_unretained AEAudioCo
             ((__bridge void(^)())message.block)();
 #ifdef DEBUG
             uint64_t end = mach_absolute_time();
-            if ( (end-start)*__hostTicksToSeconds >= (THIS->_preferredBufferDuration ? THIS->_preferredBufferDuration : 0.01) ) {
-                NSLog(@"TAAE: Warning: Block perform on realtime thread took too long (%0.4lfs)\n", (end-start)*__hostTicksToSeconds);
+            uint64_t duration = end - start;
+            if ( duration >= (THIS->_currentBufferDuration * 0.5) * __secondsToHostTicks ) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSLog(@"TAAE: Warning: Block perform on realtime thread took too long (%0.4lfs)", duration*__hostTicksToSeconds);
+                });
             }
 #endif
         }
@@ -1775,6 +1843,11 @@ NSTimeInterval AEConvertFramesToSeconds(__unsafe_unretained AEAudioController *T
 NSTimeInterval AEAudioControllerInputLatency(__unsafe_unretained AEAudioController *THIS) {
     if ( !THIS->_inputEnabled ) return 0.0;
     
+    if ( (THIS->_audiobusReceiverPort && ABReceiverPortIsConnected(THIS->_audiobusReceiverPort))
+        || (THIS->_audiobusFilterPort && ABFilterPortIsConnected(THIS->_audiobusFilterPort)) ) {
+        return 0.0;
+    }
+    
     if ( __cachedInputLatency == kNoValue ) {
         __cachedInputLatency = [((AVAudioSession*)[AVAudioSession sharedInstance]) inputLatency];
     }
@@ -1790,7 +1863,7 @@ NSTimeInterval AEAudioControllerOutputLatency(__unsafe_unretained AEAudioControl
         AEChannelRef channelBeingRendered = THIS->_channelBeingRendered;
         if ( !channelBeingRendered ) channelBeingRendered = THIS->_topChannel;
         
-        __unsafe_unretained ABSenderPort * upstreamSenderPort = firstUpstreamAudiobusSenderPort(channelBeingRendered);
+        __unsafe_unretained ABSenderPort * upstreamSenderPort = (__bridge ABSenderPort*)firstUpstreamAudiobusSenderPort(channelBeingRendered);
         if ( upstreamSenderPort && ABSenderPortIsMuted(upstreamSenderPort) ) {
             // We're sending via the sender port, and the receiver plays live - offset the timestamp by the reported latency
             return ABSenderPortGetAverageLatency(upstreamSenderPort)*__secondsToHostTicks;
@@ -2242,6 +2315,11 @@ static void interAppConnectedChangeCallback(void *inRefCon, AudioUnit inUnit, Au
     result = AUGraphNodeInfo(_audioGraph, _ioNode, NULL, &_ioAudioUnit);
     if ( !checkResult(result, "AUGraphNodeInfo") ) return NO;
 
+#ifdef DEBUG
+    // Add a render notify to the top audio unit, for the purposes of performance profiling
+    checkResult(AudioUnitAddRenderNotify(_ioAudioUnit, &ioUnitRenderNotifyCallback, (__bridge void*)self), "AudioUnitAddRenderNotify");
+#endif
+    
     [self configureAudioUnit];
     
     if ( _inputEnabled ) {
@@ -3481,9 +3559,9 @@ static BOOL upstreamChannelsConnectedToAudiobus(AEChannelRef channel) {
     return upstreamChannelsConnectedToAudiobus(parentGroupChannel);
 }
 
-static ABSenderPort * firstUpstreamAudiobusSenderPort(AEChannelRef channel) {
+static void * firstUpstreamAudiobusSenderPort(AEChannelRef channel) {
     if ( channel->audiobusSenderPort ) {
-        return (__bridge ABSenderPort*)channel->audiobusSenderPort;
+        return channel->audiobusSenderPort;
     }
     
     if ( !channel->parentGroup ) return nil;
