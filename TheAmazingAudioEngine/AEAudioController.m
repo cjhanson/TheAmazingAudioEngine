@@ -3460,11 +3460,14 @@ static void removeChannelsFromGroup(__unsafe_unretained AEAudioController *THIS,
             NSLog(@"TAAE: Couldn't activate audio session: %@", e);
         }
         
-        if ( [self setup] && [self start:error recoveringFromErrors:NO] ) {
+        if ( [self setup] ) {
             [[NSNotificationCenter defaultCenter] postNotificationName:AEAudioControllerDidRecreateGraphNotification object:self];
-            NSLog(@"TAAE: Successfully recovered from system error");
-            _hasSystemError = NO;
-            return YES;
+            
+            if ( [self start:error recoveringFromErrors:NO] ) {
+                NSLog(@"TAAE: Successfully recovered from system error");
+                _hasSystemError = NO;
+                return YES;
+            }
         }
     }
     
@@ -3705,13 +3708,15 @@ static void performLevelMonitoring(audio_level_monitor_t* monitor, AudioBufferLi
         float peak = 0.0;
         vDSP_maxmgv((float*)monitor->scratchBuffer->mBuffers[i].mData, 1, &peak, monitorFrames);
         if ( peak > monitor->chanPeak[i] ) monitor->chanPeak[i] = peak;
+        if ( peak > monitor->peak ) monitor->peak = peak;
+        
         float avg = 0.0;
         vDSP_meamgv((float*)monitor->scratchBuffer->mBuffers[i].mData, 1, &avg, monitorFrames);
         monitor->chanMeanAccumulator[i] += avg;
-        if (i==0) monitor->chanMeanBlockCount++;
+        if ( i == 0 ) monitor->chanMeanBlockCount++;
         monitor->meanAccumulator += avg;
         monitor->meanBlockCount++;
-
+        
         monitor->chanAverage[i] = monitor->chanMeanAccumulator[i] / (double)monitor->chanMeanBlockCount;
         monitor->average = monitor->meanAccumulator / (double)monitor->meanBlockCount;
     }

@@ -367,6 +367,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "TheAmazingAudioEngine/TheAmazingAudioEngine-Prefix.pch";
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 6.1;
 				OTHER_CFLAGS = (
 					"-DTPCircularBuffer=AECB",
 					"-DTPCircularBufferInit=AECBInit",
@@ -403,6 +404,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "TheAmazingAudioEngine/TheAmazingAudioEngine-Prefix.pch";
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 6.1;
 				OTHER_CFLAGS = (
 					"-DTPCircularBuffer=AECB",
 					"-DTPCircularBufferInit=AECBInit",
@@ -452,6 +454,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
+				ONLY_ACTIVE_ARCH = NO;
 				SDKROOT = iphoneos;
 			};
 			name = Debug;
